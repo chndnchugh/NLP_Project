@@ -1,0 +1,12 @@
+transformers>=4.38.0
+datasets>=2.18.0
+torch>=2.1.0
+scikit-learn>=1.4.0
+pandas>=2.0.0
+numpy>=1.26.0
+matplotlib>=3.8.0
+accelerate>=0.27.0
+nltk>=3.8.0
+vaderSentiment>=3.3.2
+requests>=2.31.0
+huggingface_hub>=0.20.0

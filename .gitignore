@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.env/
+
+# Model weights & checkpoints (large binaries — host on HuggingFace Hub instead)
+models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Generated datasets
+data/tokenized_dataset/
+data/*_cleaned.csv
+data/*_relabeled.csv
+
+# Results artifacts (regenerated each run)
+results/*.npy
+results/*.png
+
+# Logs
+logs/
+*.log
+
+# macOS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+# Heavy data and model directories
+data/
+models/
+
+# Logs and generated results (optional to ignore, but usually recommended)
+logs/
+results/
+
+# Mac system files
+.DS_Store
+
+# Python caches
+__pycache__/
+*.pyc
