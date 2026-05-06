@@ -1,8 +1,26 @@
 """
-Stage 3: Fine-Tune FinBERT on Training Data
-- Optionally freezes lower BERT layers
-- Trains with HuggingFace Trainer
-- Saves best checkpoint by weighted F1
+finetune_bert_merged.py  —  Fine-Tune bert-base-uncased on Merged Dataset
+==========================================================================
+Fine-tunes bert-base-uncased on the relabeled, merged dataset
+(Fin_Cleaned + Financial_News_sentiment_analysis + news_sentiment_data).
+
+Run AFTER:
+  1. relabel_merged.py     → data/merged_relabeled.csv
+  2. prepare_merged.py     → data/tokenized_dataset_merged/
+
+Output:
+  models/bert_base_finetuned_merged/   (best checkpoint, ready for inference)
+
+Architecture choices:
+  - FREEZE_LAYERS = 0  : all 12 encoder layers trainable
+    (generic BERT has no finance domain knowledge in lower layers;
+     freezing would hurt adaptation here)
+  - Class-weighted cross-entropy to handle positive/neutral/negative imbalance
+  - Early stopping (patience 2) to prevent overfitting
+  - fp16 training when a CUDA GPU is available
+
+Label mapping (consistent with rest of pipeline and ProsusAI/finbert):
+  0 → positive  |  1 → negative  |  2 → neutral
 """
 
 import os
@@ -21,20 +39,21 @@ from sklearn.metrics import f1_score, accuracy_score
 from sklearn.utils.class_weight import compute_class_weight
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODEL_NAME      = "ProsusAI/finbert"
-DATASET_DIR     = "data/tokenized_dataset"
-OUTPUT_DIR      = "models/finbert_finetuned"
-LOGGING_DIR     = "logs"
+_HERE         = os.path.dirname(os.path.abspath(__file__))
+MODEL_NAME    = "bert-base-uncased"
+DATASET_DIR   = os.path.join(_HERE, "data", "tokenized_dataset_merged")
+OUTPUT_DIR    = os.path.join(_HERE, "models", "bert_base_finetuned_merged")
+LOGGING_DIR   = os.path.join(_HERE, "logs", "bert_merged")
 
-FREEZE_LAYERS   = 6
-LEARNING_RATE   = 2e-5
-NUM_EPOCHS      = 5
-BATCH_SIZE      = 16
-WEIGHT_DECAY    = 0.01
-WARMUP_RATIO    = 0.1
-EARLY_STOP_PAT  = 2
+LEARNING_RATE  = 1e-5       # lower LR: generic BERT needs gentler adaptation
+NUM_EPOCHS     = 10         # more epochs to compensate for generic pre-training
+BATCH_SIZE     = 8          # halved to fit MPS unified memory on Apple M4
+GRAD_ACCUM     = 2          # accumulate 2 steps → effective batch = 16 (same as before)
+WEIGHT_DECAY   = 0.01
+WARMUP_RATIO   = 0.1
+EARLY_STOP_PAT = 3          # more patience to match longer training
 
-ID2LABEL = {0: "positive", 1: "negative", 2: "neutral"}  # matches ProsusAI/finbert native mapping
+ID2LABEL = {0: "positive", 1: "negative", 2: "neutral"}
 LABEL2ID = {v: k for k, v in ID2LABEL.items()}
 
 # ── Class weights ─────────────────────────────────────────────────────────────
@@ -47,7 +66,7 @@ def compute_class_weights(label_ids) -> torch.Tensor:
     print(f"Class weights: { {ID2LABEL[i]: round(w, 3) for i, w in enumerate(weights)} }")
     return torch.tensor(weights, dtype=torch.float)
 
-# ── WeightedTrainer ───────────────────────────────────────────────────────────
+# ── Weighted trainer (handles class imbalance) ────────────────────────────────
 class WeightedTrainer(Trainer):
     def __init__(self, class_weights: torch.Tensor, **kwargs):
         super().__init__(**kwargs)
@@ -56,8 +75,10 @@ class WeightedTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels  = inputs.pop("labels")
         outputs = model(**inputs)
-        loss_fn = nn.CrossEntropyLoss(weight=self.class_weights.to(outputs.logits.device))
-        loss    = loss_fn(outputs.logits, labels)
+        loss_fn = nn.CrossEntropyLoss(
+            weight=self.class_weights.to(outputs.logits.device)
+        )
+        loss = loss_fn(outputs.logits, labels)
         return (loss, outputs) if return_outputs else loss
 
 # ── Model ─────────────────────────────────────────────────────────────────────
@@ -68,18 +89,9 @@ def load_model():
         id2label=ID2LABEL,
         label2id=LABEL2ID,
     )
-
-    if FREEZE_LAYERS > 0:
-        for param in model.bert.embeddings.parameters():
-            param.requires_grad = False
-        for layer in model.bert.encoder.layer[:FREEZE_LAYERS]:
-            for param in layer.parameters():
-                param.requires_grad = False
-        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        total     = sum(p.numel() for p in model.parameters())
-        print(f"Frozen bottom {FREEZE_LAYERS} layers. "
-              f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.1f}%)")
-
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total     = sum(p.numel() for p in model.parameters())
+    print(f"Parameters: {trainable:,} trainable / {total:,} total")
     return model
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
@@ -103,11 +115,13 @@ def get_training_args():
         learning_rate               = LEARNING_RATE,
         weight_decay                = WEIGHT_DECAY,
         warmup_ratio                = WARMUP_RATIO,
+        gradient_accumulation_steps = GRAD_ACCUM,  # effective batch = BATCH_SIZE * GRAD_ACCUM
         eval_strategy               = "epoch",
         save_strategy               = "epoch",
         load_best_model_at_end      = True,
         metric_for_best_model       = "f1_weighted",
         greater_is_better           = True,
+        lr_scheduler_type           = "cosine",   # cosine decay → smoother convergence
         logging_steps               = 50,
         report_to                   = "none",
         fp16                        = torch.cuda.is_available(),
@@ -118,6 +132,10 @@ def get_training_args():
 if __name__ == "__main__":
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(LOGGING_DIR, exist_ok=True)
+
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     dataset   = DatasetDict.load_from_disk(DATASET_DIR)
     model     = load_model()
@@ -136,10 +154,13 @@ if __name__ == "__main__":
         callbacks       = [EarlyStoppingCallback(early_stopping_patience=EARLY_STOP_PAT)],
     )
 
-    print("\n── Starting fine-tuning ──────────────────────────────────────────")
+    print("\n── Fine-tuning bert-base-uncased on merged dataset ──────────────")
+    print(f"   Model:      {MODEL_NAME}")
+    print(f"   Dataset:    {DATASET_DIR}  ({len(dataset['train'])} train samples)")
+    print(f"   Epochs:     {NUM_EPOCHS}  |  LR: {LEARNING_RATE}  |  Batch: {BATCH_SIZE}")
     trainer.train()
 
-    print("\n── Saving best model ────────────────────────────────────────────")
+    print("\n── Saving best model ─────────────────────────────────────────────")
     trainer.save_model(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
-    print(f"Best model saved to {OUTPUT_DIR}/")
+    print(f"✓ Saved → {OUTPUT_DIR}/")
