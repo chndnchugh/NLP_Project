@@ -1,0 +1,27 @@
+# ── Deep learning & NLP ───────────────────────────────────────────────────────
+torch>=2.2.0                 # GPU training; install the CUDA build from pytorch.org
+transformers>=4.40.0         # BERT, FinBERT, Trainer API
+datasets>=2.19.0             # HuggingFace DatasetDict / tokenized splits
+tokenizers>=0.19.0           # Fast tokenizers (pulled in by transformers)
+accelerate>=0.30.0           # Required by Trainer for multi-GPU / fp16
+safetensors>=0.4.0           # Efficient model serialisation (used by transformers)
+huggingface_hub>=0.23.0      # hf_hub_download (Financial PhraseBank, model cards)
+
+# ── Data & ML utilities ───────────────────────────────────────────────────────
+pandas>=2.1.0
+numpy>=1.26.0
+scikit-learn>=1.4.0          # train_test_split, metrics, class_weight
+
+# ── Sentiment / NLP rules ─────────────────────────────────────────────────────
+nltk>=3.8.1                  # VADER via nltk.sentiment.vader + lexicon download
+vaderSentiment>=3.3.2        # Standalone VADER (fallback / direct use)
+requests>=2.31.0             # Downloading LM dictionary
+
+# ── Visualisation ─────────────────────────────────────────────────────────────
+matplotlib>=3.8.0
+
+# ── Install note ──────────────────────────────────────────────────────────────
+# For GPU support install PyTorch separately:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Then install the rest:
+#   pip install -r requirements.txt

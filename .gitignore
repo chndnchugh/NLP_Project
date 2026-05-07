@@ -1,22 +1,16 @@
-# Large data and model files
+# ── Large data and model files (root-level, old structure) ───────────────────
 data/
 models/
 logs/
 results/
 
+# ── NLP-1 has its own .gitignore — allow its data CSVs through ───────────────
+!NLP-1/data/
+NLP-1/data/tokenized_dataset/
+NLP-1/data/tokenized_dataset_merged/
+!NLP-1/data/*.csv
 
-
-
-
-lsp
-cat > .gitignore << 'EOF'
-# Large data and model files
-data/
-models/
-logs/
-results/
-
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
@@ -25,8 +19,8 @@ __pycache__/
 venv/
 *.egg-info/
 
-# macOS
+# ── macOS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 
-# Jupyter
+# ── Jupyter ───────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/

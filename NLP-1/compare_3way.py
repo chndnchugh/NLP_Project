@@ -54,7 +54,7 @@ FINBERT_MODEL       = "ProsusAI/finbert"
 # Held-out 20% PhraseBank test set created by prepare_merged.py
 PHRASEBANK_TEST     = os.path.join(_HERE, "data", "phrasebank_test.csv")
 # Freshly collected unseen data
-COLLECTED_TEST      = os.path.join(_HERE, "data", "collected_test_data.csv")
+COLLECTED_TEST      = os.path.join(_HERE, "data", "Collected_Test_Data.csv")
 BATCH_SIZE          = 32
 DEVICE              = 0 if torch.cuda.is_available() else -1
 
